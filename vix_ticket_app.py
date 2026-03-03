@@ -282,7 +282,7 @@ def fig_seasonal(df: pd.DataFrame, raw_col: str):
 # Plain-English summary section
 # ══════════════════════════════════════════════════════════════════════════════
 
-def render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, max_lag):
+def render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, max_lag, apply_seasonal_adj=True):
 
     # Pull correlation values safely
     def get_r(metric_label):
@@ -343,24 +343,32 @@ def render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, ma
         f"**{vix_mean:.1f}** (median **{vix_median:.1f}**). "
         f"Before comparing to VIX, the ticket data was cleaned of its regular weekly and "
         f"seasonal patterns, so those rhythms don't create false results."
+        if apply_seasonal_adj else
+        "Note: seasonal adjustment is OFF. Ticket counts are compared to VIX without removing"
+        " weekly or annual patterns. Any correlation may partly reflect shared seasonal structure."
     )
 
     # 2. Seasonal patterns
     st.markdown("### 2 · Seasonal patterns in ticket volume")
+    if not apply_seasonal_adj:
+        st.warning(
+            "**Seasonal adjustment is OFF.** The patterns below were **not** removed "
+            "before the VIX comparison. Results may partly reflect shared seasonality."
+        )
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(
             f"**Day-of-week pattern**\n\n"
             f"Ticket volumes follow a clear weekly rhythm. **{peak_dow}** is the busiest day "
             f"and **{low_dow}** is the quietest — a swing of roughly **{dow_swing:.0f}%** "
-            f"between the two. This pattern was removed before any VIX comparison."
+            f"between the two. {'This pattern was removed before any VIX comparison.' if apply_seasonal_adj else 'This pattern was **not** removed — it remains in the data used for correlation.'}"
         )
     with col2:
         st.markdown(
             f"**Time-of-year pattern**\n\n"
             f"Volumes also vary through the year. **{peak_month}** tends to be the busiest month "
             f"and **{low_month}** the quietest — a swing of roughly **{mon_swing:.0f}%**. "
-            f"This annual cycle was also stripped out before the VIX comparison."
+            f"This annual cycle was also {'stripped out before the VIX comparison.' if apply_seasonal_adj else '**not** removed — it remains in the data used for correlation.'}"
         )
 
     # 3. Is there a relationship?
@@ -370,13 +378,14 @@ def render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, ma
     if p_close < 0.05:
         st.success(
             f"**Yes — there is a statistically significant {strength} relationship.** "
-            f"When market volatility is higher, support ticket volume also tends to be higher, "
-            f"even after removing seasonal patterns. The correlation is **r = {r_close:.3f}** "
+            f"When market volatility is higher, support ticket volume also tends to be higher"
+            f"{', even after removing seasonal patterns' if apply_seasonal_adj else ''}. "
+            f"The correlation is **r = {r_close:.3f}** "
             f"(p {p_str}), which means the result is very unlikely to be due to chance."
         )
     else:
         st.warning(
-            f"**No clear relationship was found after removing seasonal patterns.** "
+            f"**No clear relationship was found{'after removing seasonal patterns' if apply_seasonal_adj else 'in the raw ticket data'}.** "
             f"The correlation coefficient is **r = {r_close:.3f}** (p {p_str}), "
             f"which is {strength} and not statistically reliable. "
             f"VIX does not appear to be a meaningful driver of your ticket volume."
@@ -519,6 +528,18 @@ with st.sidebar:
         help="Per-client metric adjusts for changes in client count over time.",
     )
     ticket_col_raw = "avg_ticket_count" if "avg" in use_avg else "ticket_count"
+
+    apply_seasonal_adj = st.checkbox(
+        "Apply seasonal adjustment",
+        value=True,
+        help=(
+            "When ON: day-of-week and month-of-year effects are removed from ticket "
+            "counts before correlating with VIX, preventing false correlations driven "
+            "by shared seasonal patterns.\n\n"
+            "When OFF: raw ticket counts are used. Useful to see the unadjusted "
+            "relationship or to compare adjusted vs unadjusted results."
+        ),
+    )
 
     st.markdown("---")
     st.markdown("### 📅 Year filter")
@@ -675,9 +696,12 @@ df = df[df["year"].isin(selected_years)].reset_index(drop=True)
 df["vix_change"] = df["CLOSE"].diff()   # diff needs recalc after row removal
 df["vix_pct"]    = df["CLOSE"].pct_change() * 100
 
-df["tickets_deseas"] = deseasonalise(df, ticket_col_raw)
-df["tickets_z"]      = zscore(df["tickets_deseas"])
-df["vix_z"]          = zscore(df["CLOSE"])
+if apply_seasonal_adj:
+    df["tickets_deseas"] = deseasonalise(df, ticket_col_raw)
+else:
+    df["tickets_deseas"] = df[ticket_col_raw].copy()
+df["tickets_z"] = zscore(df["tickets_deseas"])
+df["vix_z"]     = zscore(df["CLOSE"])
 ticket_col = "tickets_deseas"
 
 
@@ -726,10 +750,12 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # ── Tab 1: Time series ───────────────────────────────────────────────────────────
 with tab1:
-    st.markdown("#### Deseasonalised Tickets vs VIX — Full Period")
+    ts_adj = "Deseasonalised" if apply_seasonal_adj else "Raw (unadjusted)"
+    st.markdown(f"#### {ts_adj} Tickets vs VIX — Full Period")
     st.caption(
-        "Both series shown as z-scores (0 = long-run average, +1 = one standard deviation "
-        "above average). This lets two very different scales share one axis."
+        f"Tickets shown as **{ts_adj}** z-scores. "
+        "Both series normalised (0 = long-run average, +1 = one std dev above) "
+        "so they can share one axis."
     )
     st.pyplot(fig_timeseries(df), use_container_width=True)
     st.markdown("#### VIX History")
@@ -737,7 +763,8 @@ with tab1:
 
 # ── Tab 2: CCF ───────────────────────────────────────────────────────────────────
 with tab2:
-    st.markdown("#### Cross-Correlation Function (VIX Close vs Deseasonalised Tickets)")
+    ccf_adj = "Deseasonalised" if apply_seasonal_adj else "Raw"
+    st.markdown(f"#### Cross-Correlation Function (VIX Close vs {ccf_adj} Tickets)")
     st.caption(
         "Negative lags = VIX leads tickets. Red bar = peak lag. "
         "Dashed lines = 95% significance bands."
@@ -757,8 +784,10 @@ with tab2:
 
 # ── Tab 3: Scatter ───────────────────────────────────────────────────────────────
 with tab3:
-    st.markdown("#### VIX Close vs Deseasonalised Tickets — Scatter + OLS")
-    st.caption("Points coloured by day-of-week (0=Mon...4=Fri). Red line = OLS fit.")
+    sc_adj = "Deseasonalised" if apply_seasonal_adj else "Raw"
+    st.markdown(f"#### VIX Close vs {sc_adj} Tickets — Scatter + OLS")
+    sc_adj_lower = "deseasonalised" if apply_seasonal_adj else "raw (unadjusted)"
+    st.caption(f"Tickets are {sc_adj_lower}. Points coloured by day-of-week (0=Mon...4=Fri). Red line = OLS fit.")
     scatter_fig, r_val, p_val, slope, intercept = fig_scatter(df, ticket_col)
     st.pyplot(scatter_fig, use_container_width=True)
     s1, s2, s3 = st.columns(3)
@@ -768,18 +797,26 @@ with tab3:
     if p_val < 0.05:
         st.success(
             f"Statistically significant. Each 1-point VIX rise is associated with a "
-            f"{slope:+.5f} change in deseasonalised avg tickets/client."
+            f"{slope:+.5f} change in {'deseasonalised' if apply_seasonal_adj else 'raw'} avg tickets/client."
         )
     else:
         st.warning(f"Not statistically significant at p < 0.05 (p={p_val:.4f}).")
 
 # ── Tab 4: Seasonality ───────────────────────────────────────────────────────────
 with tab4:
-    st.markdown("#### Seasonal Patterns Removed Before Correlation")
-    st.caption(
-        "Amber bars = peak period. These effects were stripped from the ticket series "
-        "before any VIX comparison to prevent spurious correlations."
-    )
+    tab4_title = "#### Seasonal Patterns Removed Before Correlation" if apply_seasonal_adj else "#### Seasonal Patterns in Ticket Data (Not Removed)"
+    st.markdown(tab4_title)
+    if apply_seasonal_adj:
+        st.caption(
+            "Amber bars = peak period. These effects were stripped from the ticket series "
+            "before any VIX comparison to prevent spurious correlations."
+        )
+    else:
+        st.warning(
+            "**Seasonal adjustment is OFF.** These patterns exist in your data but were "
+            "**not** removed before the VIX correlation. Any correlation may partly "
+            "reflect shared seasonal structure rather than a genuine VIX relationship."
+        )
     st.pyplot(fig_seasonal(df, ticket_col_raw), use_container_width=True)
 
     col_a, col_b = st.columns(2)
@@ -844,4 +881,4 @@ with tab5:
 # Plain-English Summary
 # ══════════════════════════════════════════════════════════════════════════════
 
-render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, max_lag)
+render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, max_lag, apply_seasonal_adj)
