@@ -406,24 +406,27 @@ def render_summary(df, corr_tbl, ccf_df, r_val, p_val, slope, ticket_col_raw, ma
 
     # 5. Timing
     st.markdown("### 5 · Does market volatility come before the ticket spike?")
+    # r value at the peak lag
+    best_lag_r = float(valid_ccf.loc[valid_ccf["lag"] == best_lag, "r"].values[0])
+    best_lag_r_str = f"r = {best_lag_r:.3f}"
     if best_lag < 0:
         st.success(
             f"**VIX moves before tickets do.** The strongest correlation occurs at a lag of "
-            f"**{abs(best_lag)} trading day(s)** — a rise in VIX today tends to be followed "
-            f"by more support tickets roughly {abs(best_lag)} day(s) later. "
+            f"**{abs(best_lag)} trading day(s)** ({best_lag_r_str}) — a rise in VIX today "
+            f"tends to be followed by more support tickets roughly {abs(best_lag)} day(s) later. "
             f"This suggests VIX could work as an **early warning signal** for upcoming spikes."
         )
     elif best_lag == 0:
         st.info(
-            "**VIX and tickets move together on the same day.** "
+            f"**VIX and tickets move together on the same day** ({best_lag_r_str}). "
             "There is no meaningful lead or lag. VIX is unlikely to be a forecasting tool "
             "here, but it does confirm a same-day co-movement."
         )
     else:
         st.warning(
-            f"**Ticket volume appears to move before VIX** (peak at lag +{best_lag} days). "
-            "This is unusual and worth investigating — it could indicate a data anomaly "
-            "or that clients react to something that later flows through to markets."
+            f"**Ticket volume appears to move before VIX** (peak at lag +{best_lag} days, "
+            f"{best_lag_r_str}). This is unusual and worth investigating — it could indicate "
+            "a data anomaly or that clients react to something that later flows through to markets."
         )
     sig_lag_str = ", ".join(str(l) for l in sorted(sig_lags)) if sig_lags else "none"
     st.caption(f"Lags outside the 95% confidence band: {sig_lag_str}")
