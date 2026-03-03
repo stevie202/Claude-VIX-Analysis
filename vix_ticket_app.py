@@ -28,8 +28,9 @@ C_BG    = "#F8F9FA"
 C_AMBER = "#F39C12"
 
 # Label dictionaries — used everywhere so list-index bugs are impossible
-DOW_LABELS  = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri"}
-DOW_FULL    = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday"}
+DOW_LABELS  = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+DOW_FULL    = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday",
+               5: "Saturday", 6: "Sunday"}
 MON_LABELS  = {1: "Jan", 2: "Feb", 3: "Mar",  4: "Apr",  5: "May",  6: "Jun",
                7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
 MON_FULL    = {1: "January", 2: "February",  3: "March",    4: "April",
