@@ -518,6 +518,12 @@ with st.sidebar:
     ticket_col_raw = "avg_ticket_count" if "avg" in use_avg else "ticket_count"
 
     st.markdown("---")
+    st.markdown("### 📅 Year filter")
+    st.caption("Select which years to include in the analysis.")
+    # Placeholder — will be replaced after data loads
+    year_filter_placeholder = st.empty()
+
+    st.markdown("---")
     st.markdown("### Correlation guide")
     st.markdown(
         "| r | Strength |\n|---|---|\n"
@@ -644,6 +650,28 @@ if ticket_col_raw not in df.columns:
              f"Available columns: {list(df.columns)}")
     st.stop()
 
+df["year"] = df["date"].dt.year
+
+# ── Year filter (rendered inside the sidebar placeholder) ────────────────────────
+all_years     = sorted(df["year"].unique().tolist())
+with year_filter_placeholder:
+    selected_years = st.multiselect(
+        "Years to include",
+        options=all_years,
+        default=all_years,
+        help="Deselect years to exclude them from all charts and statistics.",
+    )
+
+if not selected_years:
+    st.warning("No years selected — please select at least one year in the sidebar.")
+    st.stop()
+
+df = df[df["year"].isin(selected_years)].reset_index(drop=True)
+
+# Re-compute derived columns on the filtered slice
+df["vix_change"] = df["CLOSE"].diff()   # diff needs recalc after row removal
+df["vix_pct"]    = df["CLOSE"].pct_change() * 100
+
 df["tickets_deseas"] = deseasonalise(df, ticket_col_raw)
 df["tickets_z"]      = zscore(df["tickets_deseas"])
 df["vix_z"]          = zscore(df["CLOSE"])
@@ -652,13 +680,15 @@ ticket_col = "tickets_deseas"
 
 # ── Dataset overview ─────────────────────────────────────────────────────────────
 st.subheader("Dataset Overview")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Trading days (merged)", f"{len(df):,}")
-c2.metric("Date range",
-          f"{df['date'].min().strftime('%d %b %Y')} to "
+years_str = ", ".join(str(y) for y in sorted(selected_years))
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Trading days", f"{len(df):,}")
+c2.metric("Years included", years_str)
+c3.metric("Date range",
+          f"{df['date'].min().strftime('%d %b %Y')} → "
           f"{df['date'].max().strftime('%d %b %Y')}")
-c3.metric("VIX Close mean", f"{df['CLOSE'].mean():.1f}")
-c4.metric("Avg tickets/client mean", f"{df[ticket_col_raw].mean():.3f}")
+c4.metric("VIX Close mean", f"{df['CLOSE'].mean():.1f}")
+c5.metric("Avg tickets/client mean", f"{df[ticket_col_raw].mean():.3f}")
 
 with st.expander("Preview merged data (first 10 rows)"):
     show_cols = ["date", "OPEN", "HIGH", "LOW", "CLOSE", "vix_range",
